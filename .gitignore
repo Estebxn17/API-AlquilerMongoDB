@@ -8,8 +8,7 @@ yarn-error.log*
 dist/
 build/
 
-# Archivos de entorno
-.env
+
 
 # Logs
 logs/

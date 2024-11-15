@@ -2,12 +2,12 @@ const express = require('express');
 const mongoose = require('mongoose');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000; 
 
 app.use(express.json());
 
-// Conectar a la base de datos MongoDB
-mongoose.connect('mongodb://localhost:27017/Autos', {
+
+mongoose.connect(process.env.MONGO_URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true
 });
@@ -18,7 +18,7 @@ db.once('open', () => {
     console.log('Conectado a la base de datos MongoDB');
 });
 
-// Esquema y modelo para Vehículos
+
 const vehiculoSchema = new mongoose.Schema({
     marca: { type: String, required: true },
     modelo: { type: String, required: true },
@@ -28,7 +28,7 @@ const vehiculoSchema = new mongoose.Schema({
 
 const Vehiculo = mongoose.model('Vehiculo', vehiculoSchema);
 
-// Esquema y modelo para Personas
+
 const personaSchema = new mongoose.Schema({
     nombre: { type: String, required: true },
     correo: { type: String, required: true, unique: true },
@@ -37,7 +37,7 @@ const personaSchema = new mongoose.Schema({
 
 const Persona = mongoose.model('Persona', personaSchema);
 
-// Rutas CRUD para Vehículos
+
 app.get('/api/vehiculos', async (req, res) => {
     try {
         const vehiculos = await Vehiculo.find();
@@ -96,7 +96,7 @@ app.delete('/api/vehiculos/:id', async (req, res) => {
     }
 });
 
-
+// Rutas CRUD para Personas
 app.get('/api/personas', async (req, res) => {
     try {
         const personas = await Persona.find();
@@ -157,5 +157,5 @@ app.delete('/api/personas/:id', async (req, res) => {
 
 
 app.listen(PORT, () => {
-    console.log(`Servidor ejecutándose en http://localhost:${PORT}`);
+    console.log(`Servidor ejecutándose en https://api-alquilermongodb-1.onrender.com/`);
 });
