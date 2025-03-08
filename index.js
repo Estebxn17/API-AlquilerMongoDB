@@ -1,33 +1,41 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const dotenv = require("dotenv").config();
-const jwt = require("jsonwebtoken"); // Importa la librería jwt
+const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
+const corsOptions = {
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+app.use(cors(corsOptions));
+
 const PORT = process.env.PORT || 5000;
 
 app.use(express.json());
 
-// Conexión a MongoDB
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("Conectado a MongoDB"))
   .catch((err) => console.error("Error de conexión:", err));
 
-// Schema para Vehículos
 const vehiculoSchema = new mongoose.Schema({
   marca: { type: String, required: true },
   modelo: { type: String, required: true },
   anio: { type: Number, required: true },
   disponibilidad: { type: String, enum: ["si", "no"], required: true },
+  alquiladoPor: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Persona",
+    default: null,
+  },
 });
 
 const Vehiculo = mongoose.model("Vehiculo", vehiculoSchema);
 
-// Schema para Personas (Usuarios)
 const personaSchema = new mongoose.Schema({
   nombre: { type: String, required: true },
   correo: { type: String, required: true, unique: true },
@@ -36,7 +44,6 @@ const personaSchema = new mongoose.Schema({
 
 const Persona = mongoose.model("Persona", personaSchema);
 
-// Middleware de Autenticación (JWT)
 function autenticarToken(req, res, next) {
   const token = req.header("Authorization")?.replace("Bearer ", "");
   if (!token) {
@@ -49,12 +56,11 @@ function autenticarToken(req, res, next) {
     if (err) {
       return res.status(403).json({ message: "Token no válido" });
     }
-    req.usuario = usuario; // Guardar el usuario decodificado en la solicitud
-    next(); // Continuar con la siguiente función
+    req.usuario = usuario;
+    next();
   });
 }
 
-// Rutas CRUD para Vehículos
 app.get("/api/vehiculos", autenticarToken, async (req, res) => {
   try {
     const vehiculos = await Vehiculo.find();
@@ -117,7 +123,6 @@ app.delete("/api/vehiculos/:id", autenticarToken, async (req, res) => {
   }
 });
 
-// Rutas CRUD para Personas (Usuarios)
 app.get("/api/personas", autenticarToken, async (req, res) => {
   try {
     const personas = await Persona.find();
@@ -140,26 +145,21 @@ app.get("/api/personas/:id", autenticarToken, async (req, res) => {
   }
 });
 
-// Registro de Persona
 app.post("/api/personas/registro", async (req, res) => {
   try {
     const { nombre, correo, contraseña } = req.body;
 
-    // Verificar que todos los campos necesarios estén presentes
     if (!nombre || !correo || !contraseña) {
       return res.status(400).json({ message: "Faltan datos" });
     }
 
-    // Verificar si el correo ya está registrado
     const personaExistente = await Persona.findOne({ correo });
     if (personaExistente) {
       return res.status(400).json({ message: "Correo ya registrado" });
     }
 
-    // Cifrar la contraseña antes de almacenarla
-    const hashedPassword = await bcrypt.hash(contraseña, 10); // Cifrado con salt de 10 rondas
+    const hashedPassword = await bcrypt.hash(contraseña, 10);
 
-    // Crear la persona con la contraseña cifrada
     const persona = new Persona({ nombre, correo, contraseña: hashedPassword });
     await persona.save();
     res.status(201).json({ message: "Persona registrada con éxito" });
@@ -168,24 +168,20 @@ app.post("/api/personas/registro", async (req, res) => {
   }
 });
 
-// Login de Persona (Generar Token JWT)
 app.post("/api/personas/login", async (req, res) => {
   try {
     const { correo, contraseña } = req.body;
 
-    // Buscar la persona por correo
     const persona = await Persona.findOne({ correo });
     if (!persona) {
       return res.status(400).json({ message: "Credenciales incorrectas" });
     }
 
-    // Comparar la contraseña proporcionada con la cifrada
     const esValida = await bcrypt.compare(contraseña, persona.contraseña);
     if (!esValida) {
       return res.status(400).json({ message: "Credenciales incorrectas" });
     }
 
-    // Crear y firmar el token JWT
     const token = jwt.sign(
       { _id: persona._id, nombre: persona.nombre },
       "tu_clave_secreta",
@@ -195,6 +191,71 @@ app.post("/api/personas/login", async (req, res) => {
     res.json({ token });
   } catch (error) {
     res.status(500).json({ message: "Error al iniciar sesión", error });
+  }
+});
+
+app.post("/api/vehiculos/alquilar/:id", autenticarToken, async (req, res) => {
+  try {
+    const vehiculo = await Vehiculo.findById(req.params.id)
+      .populate("alquiladoPor")
+      .exec();
+
+    if (!vehiculo) {
+      return res.status(404).json({ message: "Vehículo no encontrado" });
+    }
+
+    if (vehiculo.disponibilidad === "no") {
+      return res.status(400).json({
+        message: "Vehículo ya está alquilado",
+        alquiladoPor: vehiculo.alquiladoPor,
+      });
+    }
+
+    vehiculo.disponibilidad = "no";
+    vehiculo.alquiladoPor = req.usuario._id;
+    await vehiculo.save();
+
+    res.json({
+      message: "Vehículo alquilado con éxito",
+      vehiculo: {
+        _id: vehiculo._id,
+        marca: vehiculo.marca,
+        modelo: vehiculo.modelo,
+        alquiladoPor: {
+          _id: req.usuario._id,
+          nombre: req.usuario.nombre,
+        },
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: "Error al alquilar vehículo",
+      error: error.message,
+    });
+  }
+});
+
+app.post("/api/vehiculos/devolver/:id", autenticarToken, async (req, res) => {
+  try {
+    const vehiculo = await Vehiculo.findById(req.params.id);
+
+    if (!vehiculo) {
+      return res.status(404).json({ message: "Vehículo no encontrado" });
+    }
+
+    if (vehiculo.alquiladoPor?.toString() !== req.usuario._id) {
+      return res
+        .status(403)
+        .json({ message: "No puedes devolver este vehículo" });
+    }
+
+    vehiculo.disponibilidad = "si";
+    vehiculo.alquiladoPor = null;
+    await vehiculo.save();
+
+    res.json({ message: "Vehículo devuelto con éxito", vehiculo });
+  } catch (error) {
+    res.status(500).json({ message: "Error al devolver vehículo", error });
   }
 });
 
