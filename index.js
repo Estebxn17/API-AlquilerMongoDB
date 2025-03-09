@@ -198,42 +198,29 @@ app.post("/api/personas/login", async (req, res) => {
 
 app.post("/api/vehiculos/alquilar/:id", autenticarToken, async (req, res) => {
   try {
-    const vehiculo = await Vehiculo.findById(req.params.id)
-      .populate("alquiladoPor")
-      .exec();
+    const vehiculo = await Vehiculo.findById(req.params.id);
 
     if (!vehiculo) {
       return res.status(404).json({ message: "Vehículo no encontrado" });
     }
 
-    if (vehiculo.disponibilidad === "no") {
-      return res.status(400).json({
-        message: "Vehículo ya está alquilado",
-        alquiladoPor: vehiculo.alquiladoPor,
-      });
+    // Verifica si el usuario ya está en el token
+    if (!req.usuario?._id) {
+      return res.status(403).json({ message: "Usuario no autenticado" });
     }
 
+    
     vehiculo.disponibilidad = "no";
     vehiculo.alquiladoPor = req.usuario._id;
     await vehiculo.save();
 
     res.json({
       message: "Vehículo alquilado con éxito",
-      vehiculo: {
-        _id: vehiculo._id,
-        marca: vehiculo.marca,
-        modelo: vehiculo.modelo,
-        alquiladoPor: {
-          _id: req.usuario._id,
-          nombre: req.usuario.nombre,
-        },
-      },
+      vehiculo: vehiculo,
     });
   } catch (error) {
-    res.status(500).json({
-      message: "Error al alquilar vehículo",
-      error: error.message,
-    });
+    console.error("🔥 Error en el servidor:", error); // Log crítico
+    res.status(500).json({ message: error.message });
   }
 });
 
